@@ -1,0 +1,245 @@
+---
+title: 'Publikationsdata i en grafdatabas'
+author: Markus Skyttner / markus@redpill-linpro.com
+date: '2021-12-01'
+output:
+  ioslides_presentation:
+    css: assets/css/styles.css
+    logo: assets/logo.svg
+    mathjax: default
+    self-contained: yes
+    transition: slower
+    widescreen: yes
+---
+
+```{r setup, include=FALSE}
+#devtools::install_github("mskyttner/rltheme")
+library(rltheme)
+knitr::opts_chunk$set(echo = FALSE)
+
+red <- tolower(rltheme::palette_rl(1))
+
+emphasize <- function(txt) 
+  sprintf("<font color='%s'>\n%s\n</font>", red, txt)
+```
+
+# {data-background=assets/rl-gradient-bg.png data-background-size=cover}
+
+<center>
+
+![](assets/logo.png){width=400}
+
+</center>
+
+## {.flexbox .vcenter}
+
+> __Uppdrag på KTH__
+
+Två år i ett projekt Årlig Bibliometrisk Uppföljning på KTH / "Annual Bibliometric Monitoring"
+
+Nu omdöpt: `r emphasize("Datadriven analys och uppföljning av KTHs forskning")`
+
+<center>
+
+[![](assets/img/kth-map.png){width=400}](https://www.google.com/maps/place/59%C2%B021'05.3%22N+18%C2%B004'02.1%22E/@59.3481525,18.0685303,16z/data=!4m5!3m4!1s0x0:0x0!8m2!3d59.351479!4d18.067243?hl=en-US)
+
+</center>
+
+KTH's Bibliotek och IT-Avdelningen
+
+## Uppdraget {data-background=assets/bg/glasses.png data-background-size=cover}
+
+- KTH's bibliotek har en `r emphasize("__Bibliometrigrupp__")` med forskare och analytiker
+- Utvärdering av __forskningsoutput__ från lärosäten
+  - Arbetar med KTH internt - `r emphasize("__årlig utvärdering__")` med alla anställda
+  - Arbetar också externt med `r emphasize("__uppdrag från Vinnova__")` mm
+- Data: Publikationer och beräknade __indikatorer__ såsom sampublicering, citeringsgrad mm
+- Samverkar med KTH's `r emphasize("__IT-avdelning__")` (Dev+Ops)
+
+## Agenda
+  
+- Varför använda en grafdatabas som `neo4j`?
+- Exempel på publikationsdata
+- Frågespråk: "Lingua franca" SQL versus CYPHER eller "Graph Query Language"/GQL?
+- Demo: Läsa in publikationsdata i en neo4j-container
+
+## Varför använda en grafdatabas?
+
+OSS-verktyg för att jobba med grafdata är exv `Apache Spark` med grafstöd, `RedisGraph`, `neo4j` mm.
+
+Marketing pitch från `neo4j`
+
+- "Some legacy RDBMS are poor at querying and adding data relationships."
+- Often "rigid schemas" can make it difficult to add relationships connecting entities.
+- A graph database treats relationships as data, so you can add and query on relationships "as you go".
+
+Uppmärksammat case: Panama Papers
+
+- https://neo4j.com/blog/analyzing-panama-papers-neo4j/
+
+## Grafdata 
+
+A graph is composed of two elements: a node (or vertex) and a relationship (or edge). 
+
+- Each *node* represents an entity (a person, place, thing, category or other piece of data).
+- Each *relationship* ("edge") represents how two nodes are associated. 
+
+This general-purpose structure allows you to model all kinds of scenarios.
+
+## Exempel på publikationsdata
+
+```{r, echo=TRUE}
+library(kthcorpus) # from https://github.com/kth-library/kthcorpus
+
+
+# example publication data
+publications <- kth_diva_pubs()
+
+publications
+```
+## Publication data loaded in "duckdb"
+
+The [duckdb](https://duckdb.org) is a column-oriented embeddable in-process OLAP database for relational data, lets load and inspect some publication data:
+
+```{r, echo=TRUE}
+
+suppressPackageStartupMessages(library(dplyr))
+suppressPackageStartupMessages(library(duckdb))
+
+# load it into a RDBMS (duckdb)
+
+con <- dbConnect(duckdb())
+duckdb::duckdb_register(con, "publications", publications)
+
+# now we can use custom SQL queries
+dbGetQuery(con, "SELECT count(*) from publications")
+
+```
+
+## Tidyverse data manipulation
+
+```{r, echo=TRUE}
+
+# or we can use tidyverse APIs for data manipulation
+# see https://www.tidyverse.org/
+# with data manipulation "chains" (using pipes)
+top_three <- 
+  con %>% 
+  tbl("publications") %>% 
+  group_by(PublicationType) %>%
+  tally() %>%
+  head(3)
+
+top_three
+
+dbDisconnect(con, shutdown = TRUE)
+```
+
+
+## CYPHER/GQL vs SQL
+
+"OpenCypher"/CYPHER/GQL - "Graph Query Language" standardiseras:
+
+- http://opencypher.org/
+
+"Löpande modellering":
+
+- See this [primer](https://medium.com/neo4j/neo4j-data-modelling-2982bd90aa0c).
+
+## Moving data (from RDBMS to graph db)
+
+We need to convert relational database data to a "property graph" data, a kind of "graph normalization" process:
+
+    - Table to "Node Label"
+    - Row to "Node"
+    - Column to "Node Property"
+    - Keys - use Business primary keys only
+       - remove technical primary keys, keep business primary keys.
+    - Foreign keys to Relationships
+      - replace foreign keys to the other table with relationships, remove them afterwards.
+    - No defaults / NULLs 
+      - remove data with default values, no need to store those.
+    - Clean up data 
+      - duplicate data in denormalized tables might have to be pulled out into separate nodes to get a cleaner model.
+    - Index Columns to Array
+      - indexed column names (like email1, email2, email3) might indicate an array property.
+    - Join tables to Relationships
+      - join tables are transformed into relationships, columns on those tables become relationship properties.
+
+## Downloading and getting started with `neo4j`
+
+For neo4j there are several components:
+
+- a *server*, the "graph database" (can be extended with plugins/add-ons, like "apoc" and "GDS" etc)
+- a *desktop client*, an environment for writing queries and working with data
+- various *bindings*, making it possible to write and read data from R, python, databases etc
+
+See https://neo4j.com/download/
+
+## Container with neo4j
+
+A customized container image used at KTH can be found here:
+
+- <https://github.com/KTH-Library/neo4kth>
+
+It has some extensions added such as Graph Data Science, Awesome Procedures (apoc).
+
+It can also load data from S3 buckets (for example served using https://min.io)
+
+## Loading data
+
+Data can be loaded from Desktop client, using bindings or bulk loaded on server.
+
+Using R: https://github.com/neo4j-rstats/neo4r
+
+Using Python: https://towardsdatascience.com/neo4j-cypher-python-7a919a372be7
+
+Using CLI: https://neo4j.com/developer/guide-import-csv/  
+
+## Loading publication data in `neo4j`
+
+- `neo4j` can be used as a data processing components to meet specific needs for "graph analytics"
+
+- similar to what `igraph` (Python, R) offers
+
+- in this case using dockerized `neo4j` setup with `neosemantics/n10s`, `gds` and `apoc`
+
+- CLI tools like `neo4j-admin` which allows bulk loading, using data provided from "diva" R-package
+
+- Loading data from "object storage", in our case minio at bibliometrics.lib.kth.se
+
+## Loading data w CYPHER
+
+CYPHER; Load from S3 url (minio) and write to database using label "Issue":
+
+    LOAD CSV WITH HEADERS FROM "http://bibliometrics.lib.kth.se:9000/bibliometrics/swepub-checks.tsv?Content-Disposition=attachment%3B%20filename%3D%22swepub-checks.tsv%22&X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=librarian%2F20210421%2F%2Fs3%2Faws4_request&X-Amz-Date=20210421T123325Z&X-Amz-Expires=432000&X-Amz-SignedHeaders=host&X-Amz-Signature=464d66fa726500b7822674f19c2636aa56d2103ff2929cd5b55311063ecc6251"  as row FIELDTERMINATOR '\t' 
+    CREATE (:Issue {result: row.validation_result, year: toInteger(row.publication_year), flag: row.flag_type, old: row.value, new: row.new_value})
+
+    # inspect results
+    MATCH (n:Issue) RETURN n LIMIT 25
+
+    # or use APOC to load from authenticated S3 bucket
+    CALL apoc.load.csv('s3://data.lib.kth.se/bibliometrics/swepub-checks.tsv',{sep:"\t"}) YIELD lineNo, list, strings, map, stringMap
+
+The latter approach using APOC works due to [a fix recently implemented](https://github.com/neo4j-contrib/neo4j-apoc-procedures/issues/2198)
+
+## Bulk loading (larger data)
+
+See `kthcorpus::neo4j_bulk_extract()` for steps required for bulk loading publication corpus data from KTH.
+
+This provides the data files used by docker image `kthb/neo4kth` used in its [startup command](https://github.com/KTH-Library/neo4kth/blob/main/docker-compose.yml#L15)
+
+## Lean and mean alternatives
+
+CYPHER/GQL is different from SQL and has a learning curve for associated tooling/engines...
+
+- https://igraph.org/ - efficient portable network analysis tools
+
+- https://duckdb.org - in-memory embeddable database
+
+##
+
+![Co-publication app](assets/img/screenshot-copub.png)
+
+
+

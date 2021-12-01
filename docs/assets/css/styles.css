@@ -1,0 +1,10 @@
+@import url(//fonts.googleapis.com/css?family=Lato:200,300,400,500,600);
+
+slides > slide {
+  font-family: "Lato", Sans, serif;
+  color: black;
+}
+
+a {
+  color: #ef3239;
+}
